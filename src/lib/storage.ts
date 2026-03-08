@@ -9,6 +9,7 @@ export interface SavedMagazine {
     templateId: string;
     photoUrls: string[]; // blob URLs won't persist; only used in-session
     photoTypes: ('photo' | 'video')[];
+    photoPosters?: (string | undefined)[];
     elements: object[];
     texts: Record<string, string>;
     thumbnail?: string;  // base64 jpeg of first page snapshot

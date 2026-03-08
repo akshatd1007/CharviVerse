@@ -85,6 +85,68 @@ const getUUID = () => {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
+// ── Shared Content Conversion Helpers ─────────────────────────────────────
+
+const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+});
+
+const compressImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+        const MAX = 1200;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+            const ratio = Math.min(MAX / w, MAX / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, 0, 0, w, h);
+        }
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+});
+
+const videoPoster = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "auto";
+    video.onloadeddata = () => {
+        video.currentTime = 0.5;
+    };
+    video.onseeked = () => {
+        const MAX = 1600;
+        let w = video.videoWidth, h = video.videoHeight;
+        if (w > MAX || h > MAX) {
+            const ratio = Math.min(MAX / w, MAX / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.drawImage(video, 0, 0, w, h);
+        }
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    video.onerror = reject;
+    video.src = URL.createObjectURL(file);
+});
+
 export function MagazineWorkspace({
     photos,
     onReset,
@@ -237,64 +299,39 @@ export function MagazineWorkspace({
         if (!user) { alert("Please log in to save magazines."); return; }
         setIsSaving(true);
         try {
-            // Convert photos to base64 data URLs so they persist across page reloads
-            const toBase64 = (photo: Photo): Promise<string> => new Promise(resolve => {
+            // Convert photos/videos to base64 data URLs so they persist across page reloads
+            const processedPhotos = await Promise.all(photos.map(async (p) => {
                 try {
-                    if (photo.url.startsWith('data:')) { resolve(photo.url); return; }
-                    if (photo.type === 'video') { resolve(photo.url); return; } // skip video
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => {
-                        const MAX = 1600; // Increased for better quality
-                        let w = img.naturalWidth, h = img.naturalHeight;
-                        if (w > MAX || h > MAX) { const r = Math.min(MAX / w, MAX / h); w = Math.round(w * r); h = Math.round(h * r); }
-                        const c = document.createElement('canvas');
-                        c.width = w;
-                        c.height = h;
-                        const ctx = c.getContext('2d', { alpha: false });
-                        if (ctx) {
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.imageSmoothingQuality = 'high';
-                            ctx.drawImage(img, 0, 0, w, h);
-                        }
-                        resolve(c.toDataURL('image/jpeg', 0.9)); // Optimal balance
-                    };
-                    img.onerror = () => resolve(photo.url);
-                    img.src = photo.url;
-                } catch { resolve(photo.url); }
-            });
+                    // If already base64, keep it but strip file handle for clean storage
+                    if (p.url.startsWith('data:')) {
+                        return { ...p, file: undefined };
+                    }
 
-            const base64Urls = await Promise.all(photos.map(toBase64));
+                    // If we have a file handle, convert it now
+                    if (p.file) {
+                        if (p.type === 'video') {
+                            const b64 = await fileToBase64(p.file);
+                            const poster = await videoPoster(p.file);
+                            return { ...p, url: b64, poster, file: undefined };
+                        } else {
+                            const b64 = await compressImage(p.file);
+                            return { ...p, url: b64, file: undefined };
+                        }
+                    }
+
+                    // Fallback for Blob URLs that might have lost their file handle
+                    return { ...p, file: undefined };
+                } catch (e) {
+                    console.error("Save: conversion error for", p.id, e);
+                    return { ...p, file: undefined };
+                }
+            }));
 
             // Use the selected cover photo as the thumbnail
             let thumbnail: string | undefined;
-            const coverPhoto = photos[coverIndex];
-            if (coverPhoto && coverPhoto.type !== 'video') {
-                thumbnail = await new Promise<string>(resolve => {
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => {
-                        const MAX = 800; // Increased for sharp thumbnails in grid view
-                        let w = img.naturalWidth, h = img.naturalHeight;
-                        if (w > MAX || h > MAX) {
-                            const r = Math.min(MAX / w, MAX / h);
-                            w = Math.round(w * r);
-                            h = Math.round(h * r);
-                        }
-                        const c = document.createElement('canvas');
-                        c.width = w;
-                        c.height = h;
-                        const ctx = c.getContext('2d', { alpha: false });
-                        if (ctx) {
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.imageSmoothingQuality = 'high';
-                            ctx.drawImage(img, 0, 0, w, h);
-                        }
-                        resolve(c.toDataURL('image/jpeg', 0.9));
-                    };
-                    img.onerror = () => resolve('');
-                    img.src = coverPhoto.url;
-                });
+            const coverPhoto = processedPhotos[coverIndex];
+            if (coverPhoto) {
+                thumbnail = coverPhoto.type === 'video' ? coverPhoto.poster : coverPhoto.url;
             }
 
             try {
@@ -304,8 +341,9 @@ export function MagazineWorkspace({
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                     templateId: activeTemplate,
-                    photoUrls: base64Urls,
-                    photoTypes: photos.map(p => p.type),
+                    photoUrls: processedPhotos.map(p => p.url),
+                    photoTypes: processedPhotos.map(p => p.type),
+                    photoPosters: processedPhotos.map(p => p.poster),
                     coverIndex: coverIndex,
                     elements,
                     texts,
@@ -888,65 +926,6 @@ export function MagazineWorkspace({
                             if (!magazineId) return alert("Please save the magazine first!");
                             setIsPublishing(true);
                             try {
-                                // Compress image to max 1200px, JPEG quality 0.7 for Netlify compatibility
-                                const compressImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
-                                    const img = new Image();
-                                    img.onload = () => {
-                                        const MAX = 1200;
-                                        let w = img.width, h = img.height;
-                                        if (w > MAX || h > MAX) {
-                                            const ratio = Math.min(MAX / w, MAX / h);
-                                            w = Math.round(w * ratio);
-                                            h = Math.round(h * ratio);
-                                        }
-                                        const canvas = document.createElement("canvas");
-                                        canvas.width = w;
-                                        canvas.height = h;
-                                        const ctx = canvas.getContext("2d", { alpha: false });
-                                        if (ctx) {
-                                            ctx.imageSmoothingEnabled = true;
-                                            ctx.imageSmoothingQuality = 'high';
-                                            ctx.drawImage(img, 0, 0, w, h);
-                                        }
-                                        resolve(canvas.toDataURL("image/jpeg", 0.7));
-                                    };
-                                    img.onerror = reject;
-                                    img.src = URL.createObjectURL(file);
-                                });
-
-                                const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-                                    const reader = new FileReader();
-                                    reader.onload = () => resolve(reader.result as string);
-                                    reader.onerror = reject;
-                                    reader.readAsDataURL(file);
-                                });
-
-                                // Extract a single poster frame from video
-                                const videoPoster = (file: File): Promise<string> => new Promise((resolve, reject) => {
-                                    const video = document.createElement("video");
-                                    video.muted = true;
-                                    video.preload = "auto";
-                                    video.onloadeddata = () => {
-                                        video.currentTime = 0.5;
-                                    };
-                                    video.onseeked = () => {
-                                        const MAX = 1600;
-                                        let w = video.videoWidth, h = video.videoHeight;
-                                        if (w > MAX || h > MAX) {
-                                            const ratio = Math.min(MAX / w, MAX / h);
-                                            w = Math.round(w * ratio);
-                                            h = Math.round(h * ratio);
-                                        }
-                                        const canvas = document.createElement("canvas");
-                                        canvas.width = w;
-                                        canvas.height = h;
-                                        canvas.getContext("2d")!.drawImage(video, 0, 0, w, h);
-                                        resolve(canvas.toDataURL("image/jpeg", 0.85));
-                                    };
-                                    video.onerror = reject;
-                                    video.src = URL.createObjectURL(file);
-                                });
-
                                 // Modified handlePublish logic start
                                 const total = photos.length;
                                 const processedPhotos = [];
