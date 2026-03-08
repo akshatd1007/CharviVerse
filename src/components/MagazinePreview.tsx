@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { Photo } from "./Uploader";
 import { Template } from "@/lib/templates";
-import { PageElement } from "@/lib/types";
+import { PageElement, PhotoFilter, MusicTrack, buildFilterString } from "@/lib/types";
 import { Page } from "./Page";
-import { ChevronRight, ChevronLeft, Volume2, VolumeX } from "lucide-react";
+import { ChevronRight, ChevronLeft, Volume2, VolumeX, Music } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EditableText } from "./EditableText";
 import { StickerElement } from "./StickerElement";
@@ -61,6 +61,8 @@ interface MagazinePreviewProps {
     setTexts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     isViewerMode?: boolean;
     isExportMode?: boolean;
+    photoFilters?: Record<string, PhotoFilter>;
+    musicTrack?: MusicTrack | null;
 }
 
 // Varied inner page layouts to make things eye-catching
@@ -74,23 +76,80 @@ function getLayout(i: number, total: number): LayoutVariant {
 
 
 // ── Media Component ─────────────────────────────────────────────────────────────
-function Media({ photo, className = "", style = {}, alt = "", side = "right" }: { photo: Photo, className?: string, style?: React.CSSProperties, alt?: string, side?: "left" | "right" }) {
+function Media({ photo, filter, className = "", style = {}, alt = "", side = "right" }: { photo: Photo, filter?: PhotoFilter, className?: string, style?: React.CSSProperties, alt?: string, side?: "left" | "right" }) {
     const [isMuted, setIsMuted] = useState(true);
+    const [blobUrl, setBlobUrl] = useState<string | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    const filterString = filter ? buildFilterString(filter) : "";
+    const combinedStyle = { ...style, filter: filterString };
+
+    // Convert Base64 to Blob URL for more reliable playback
+    useEffect(() => {
+        if (photo.type === 'video' && photo.url.startsWith('data:')) {
+            try {
+                const parts = photo.url.split(',');
+                const mime = parts[0].match(/:(.*?);/)?.[1] || 'video/mp4';
+                const bstr = atob(parts[1]);
+                let n = bstr.length;
+                const u8arr = new Uint8Array(n);
+                while (n--) {
+                    u8arr[n] = bstr.charCodeAt(n);
+                }
+                const blob = new Blob([u8arr], { type: mime });
+                const url = URL.createObjectURL(blob);
+                setBlobUrl(url);
+                return () => {
+                    URL.revokeObjectURL(url);
+                    setBlobUrl(null);
+                };
+            } catch (e) {
+                console.error("Failed to convert Base64 to Blob:", e);
+                setBlobUrl(photo.url);
+            }
+        } else {
+            setBlobUrl(photo.url);
+        }
+    }, [photo.url, photo.type]);
+
+    const attemptPlay = useCallback(() => {
+        if (videoRef.current) {
+            videoRef.current.play().catch(err => {
+                console.warn("Video play attempt failed:", err.name, err.message);
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        if (photo.type === 'video' && videoRef.current && blobUrl) {
+            attemptPlay();
+        }
+    }, [blobUrl, photo.type, attemptPlay]);
 
     if (!photo) return null;
     if (photo.type === "video") {
         return (
             <div className={`relative group w-full h-full ${className}`} style={{ ...style, overflow: 'hidden' }}>
                 <video
-                    src={photo.url}
+                    key={blobUrl || 'none'}
+                    ref={videoRef}
+                    src={blobUrl || ''}
+                    poster={photo.poster}
                     className="w-full h-full"
                     style={{ objectFit: "cover" }}
                     playsInline
                     muted={isMuted}
                     loop
                     autoPlay
+                    preload="auto"
                     draggable={false}
                     onDragStart={(e) => e.preventDefault()}
+                    onCanPlay={() => attemptPlay()}
+                    onLoadedData={() => attemptPlay()}
+                    onError={(e) => {
+                        const v = e.currentTarget;
+                        console.error("Video error:", v.error?.code, v.error?.message);
+                    }}
                 />
                 <button
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsMuted(!isMuted); }}
@@ -103,9 +162,9 @@ function Media({ photo, className = "", style = {}, alt = "", side = "right" }: 
             </div>
         );
     }
-    return <img crossOrigin="anonymous" src={photo.url} alt={alt} className={className} style={style} draggable={false} onDragStart={(e) => e.preventDefault()} />;
+    return <img crossOrigin="anonymous" src={photo.url} alt={alt} className={className} style={combinedStyle} draggable={false} onDragStart={(e) => e.preventDefault()} />;
 }
-export function MagazinePreview({ photos, template, elements, onElementChange, onElementRemove, texts, setTexts, isViewerMode, isExportMode }: MagazinePreviewProps) {
+export function MagazinePreview({ photos, template, elements, onElementChange, onElementRemove, texts, setTexts, isViewerMode, isExportMode, photoFilters, musicTrack }: MagazinePreviewProps) {
 
     const [isMounted, setIsMounted] = useState(false);
     const [spreadIdx, setSpreadIdx] = useState(0);
@@ -123,6 +182,41 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
     const rightDragRef = useRef<DragState>({ active: false, startX: 0, currentAngle: 0 });
     const leftDragRef = useRef<DragState>({ active: false, startX: 0, currentAngle: 0 });
     const hoverTimeouts = useRef<{ left: NodeJS.Timeout | null, right: NodeJS.Timeout | null }>({ left: null, right: null });
+
+    // Audio persistence for musicTrack
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+
+    useEffect(() => {
+        if (musicTrack && isViewerMode) {
+            if (!audioRef.current) {
+                audioRef.current = new Audio(musicTrack.url);
+                audioRef.current.loop = true;
+            } else {
+                audioRef.current.src = musicTrack.url;
+            }
+
+            if (isMusicPlaying) {
+                audioRef.current.play().catch(e => console.error("Audio playback error:", e));
+            }
+        }
+
+        return () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+            }
+        };
+    }, [musicTrack, isViewerMode]);
+
+    const toggleMusic = () => {
+        if (!audioRef.current) return;
+        if (isMusicPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play().catch(e => console.error("Audio playback error:", e));
+        }
+        setIsMusicPlaying(!isMusicPlaying);
+    };
 
     useEffect(() => setIsMounted(true), []);
 
@@ -165,6 +259,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
             >
                 <Media
                     photo={coverPhoto}
+                    filter={photoFilters?.[0]}
                     className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${template.coverLayout === 'fashion' ? 'grayscale opacity-90' : template.coverLayout === 'tech' ? 'opacity-70' : 'opacity-100'}`}
                     alt="Cover background"
                     side="right"
@@ -292,7 +387,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
         <Page key="cover-inside-front" className={`${template.pageClass} relative flex items-center justify-center overflow-hidden`}>
             {coverPhoto && (
                 <div className="absolute inset-0">
-                    <Media photo={coverPhoto} className="w-full h-full object-cover blur-2xl opacity-20 scale-110" />
+                    <Media photo={coverPhoto} filter={photoFilters?.[0]} className="w-full h-full object-cover blur-2xl opacity-20 scale-110" />
                     <div className="absolute inset-0 bg-gradient-to-br from-black/40 to-transparent" />
                 </div>
             )}
@@ -354,7 +449,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                             initial={isExportMode ? false : { scale: 1.08, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                             transition={{ duration: 0.9 }} whileHover={{ scale: 1.03 }}
                         >
-                            <Media photo={photo} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
+                            <Media photo={photo} filter={photoFilters?.[pageIndex]} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
                         </motion.div>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/30 pointer-events-none" />
                         <div className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-4 pointer-events-none">
@@ -390,7 +485,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                                 initial={isExportMode ? false : { scale: 1.08, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                                 transition={{ duration: 0.8 }} whileHover={{ scale: 1.04 }}
                             >
-                                <Media photo={photo} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
+                                <Media photo={photo} filter={photoFilters?.[pageIndex]} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
                             </motion.div>
                             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40 pointer-events-none" />
                             <span className={`absolute top-3 right-3 px-2 py-0.5 text-[0.42rem] font-mono font-bold uppercase tracking-[0.3em] ${accent.tag}`}>{pg}</span>
@@ -429,7 +524,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                                 initial={isExportMode ? false : { opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
                                 transition={{ duration: 0.7 }} whileHover={{ scale: 1.04 }}
                             >
-                                <Media photo={photo} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
+                                <Media photo={photo} filter={photoFilters?.[pageIndex]} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
                             </motion.div>
                         </div>
                         <div className={`flex-1 flex flex-col ${accent.bg} ${accent.text} px-5 py-6`}>
@@ -479,7 +574,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                                 initial={isExportMode ? false : { opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }}
                                 transition={{ duration: 0.7 }} whileHover={{ scale: 1.04 }}
                             >
-                                <Media photo={photo} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
+                                <Media photo={photo} filter={photoFilters?.[pageIndex]} alt={`Photo ${i + 1}`} className="w-full h-full object-cover object-center" side={side} />
                             </motion.div>
                         </div>
                     </div>
@@ -517,7 +612,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                                 initial={isExportMode ? false : { opacity: 0, scale: 1.06 }} animate={{ opacity: 1, scale: 1 }}
                                 transition={{ duration: 0.7 }} whileHover={{ scale: 1.03 }}
                             >
-                                <Media photo={photo} alt={`Photo ${i + 1} — hero`} className="w-full h-full object-cover object-center" side={side} />
+                                <Media photo={photo} filter={photoFilters?.[pageIndex]} alt={`Photo ${i + 1} — hero`} className="w-full h-full object-cover object-center" side={side} />
                             </motion.div>
                             <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/45 pointer-events-none" />
                             <div className="absolute bottom-3 left-4 right-4">
@@ -548,7 +643,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                                         initial={isExportMode ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
                                         whileHover={{ scale: 1.08 }}
                                     >
-                                        <Media photo={photo} alt="detail-top" className="w-full h-full object-cover object-top" side={side} />
+                                        <Media photo={photo} filter={photoFilters?.[pageIndex]} alt="detail-top" className="w-full h-full object-cover object-top" side={side} />
                                     </motion.div>
                                 </div>
                                 <div className="relative flex-1 overflow-hidden">
@@ -557,7 +652,7 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                                         initial={isExportMode ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}
                                         whileHover={{ scale: 1.08 }}
                                     >
-                                        <Media photo={photo} alt="detail-bottom" className="w-full h-full object-cover object-bottom" side={side} />
+                                        <Media photo={photo} filter={photoFilters?.[pageIndex]} alt="detail-bottom" className="w-full h-full object-cover object-bottom" side={side} />
                                     </motion.div>
                                 </div>
                             </div>
@@ -691,7 +786,8 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
     const isCoverPage = (idx: number | null) => idx === 0 || idx === pages.length - 1;
 
     const PAGE_W = 300;
-    const PAGE_H = 430;
+    const PAGE_H = 424; // Precision A4 ratio (1:1.414) for w=300
+
 
     // NOTE: `overflow: hidden` on a parent of `transform-style: preserve-3d` FLATTENS
     // the 3D context → software rendering. Page containers must use overflow: visible.
@@ -1100,6 +1196,17 @@ export function MagazinePreview({ photos, template, elements, onElementChange, o
                         className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium bg-white/10 backdrop-blur-md border border-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/20 transition-colors">
                         Next <ChevronRight size={16} />
                     </motion.button>
+
+                    {musicTrack && isViewerMode && (
+                        <motion.button
+                            onClick={toggleMusic}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            className="ml-4 p-3 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white"
+                        >
+                            {isMusicPlaying ? <Volume2 size={18} className="text-pink-400" /> : <VolumeX size={18} />}
+                        </motion.button>
+                    )}
                 </div>
             </motion.div>
         </>

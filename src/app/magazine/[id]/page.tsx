@@ -76,6 +76,8 @@ export default function MagazineViewerPage() {
                     template={template}
                     elements={magazine.elements || []}
                     texts={magazine.texts || {}}
+                    photoFilters={magazine.photoFilters || {}}
+                    musicTrack={magazine.musicTrack || null}
                     setTexts={() => { }}
                     onElementChange={() => { }}
                     onElementRemove={() => { }}

@@ -5,7 +5,7 @@ import { Photo } from "./Uploader";
 import { templates, TemplateId } from "@/lib/templates";
 import { MagazinePreview } from "./MagazinePreview";
 import { PageElement, PhotoFilter, MusicTrack, defaultFilter, buildFilterString } from "@/lib/types";
-import { Layout, Palette, Download, ChevronLeft, ChevronRight, Type, Sparkles, Plus, Image as ImageIcon, Save, Music, Sliders, Pencil, Check, SlidersHorizontal } from "lucide-react";
+import { Layout, Palette, Download, ChevronLeft, ChevronRight, Type, Sparkles, Plus, Image as ImageIcon, Save, Music, Sliders, Pencil, Check, SlidersHorizontal, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { saveMagazine, getCurrentUser } from "@/lib/storage";
 import { generatePDF } from "@/lib/pdf-export";
@@ -185,6 +185,41 @@ export function MagazineWorkspace({
         } else if (coverIndex === newIndex) {
             setCoverIndex(index);
         }
+
+        if (onReorderPhotos) {
+            onReorderPhotos(newPhotos);
+        }
+    };
+
+    const handleRemovePhoto = (index: number) => {
+        if (photos.length <= 1) {
+            alert("You must have at least one photo in your magazine.");
+            return;
+        }
+
+        if (!confirm("Are you sure you want to remove this item?")) return;
+
+        const newPhotos = photos.filter((_, i) => i !== index);
+
+        // Adjust cover index
+        if (coverIndex === index) {
+            setCoverIndex(0); // Reset to first if cover removed
+        } else if (coverIndex > index) {
+            setCoverIndex(prev => prev - 1);
+        }
+
+        // Adjust filters (shift keys for all items after the removed one)
+        const newFilters: Record<string, PhotoFilter> = {};
+        Object.entries(photoFilters).forEach(([key, filter]) => {
+            const k = parseInt(key);
+            if (k < index) {
+                newFilters[key] = filter;
+            } else if (k > index) {
+                newFilters[(k - 1).toString()] = filter;
+            }
+            // if k === index, it's dropped
+        });
+        setPhotoFilters(newFilters);
 
         if (onReorderPhotos) {
             onReorderPhotos(newPhotos);
@@ -508,14 +543,23 @@ export function MagazineWorkspace({
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleReorder(i, 'left'); }}
                                                 className="p-1 rounded-full bg-black/80 backdrop-blur-md text-white border border-white/20 hover:bg-white/20 hover:text-pink-300 pointer-events-auto shadow-sm"
+                                                title="Move Left"
                                             >
                                                 <ChevronLeft size={10} />
                                             </button>
                                         )}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleRemovePhoto(i); }}
+                                            className="p-1 rounded-full bg-red-500/80 backdrop-blur-md text-white border border-white/20 hover:bg-red-600 pointer-events-auto shadow-sm"
+                                            title="Remove"
+                                        >
+                                            <Trash2 size={10} />
+                                        </button>
                                         {i < photos.length - 1 && (
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleReorder(i, 'right'); }}
                                                 className="p-1 rounded-full bg-black/80 backdrop-blur-md text-white border border-white/20 hover:bg-white/20 hover:text-pink-300 pointer-events-auto shadow-sm"
+                                                title="Move Right"
                                             >
                                                 <ChevronRight size={10} />
                                             </button>
@@ -558,8 +602,8 @@ export function MagazineWorkspace({
                                                 key={i}
                                                 onClick={() => setFilterPhotoIndex(i)}
                                                 className={`relative flex-shrink-0 w-10 h-14 rounded-md overflow-hidden transition-all ${filterPhotoIndex === i
-                                                        ? 'ring-2 ring-orange-400 ring-offset-1 ring-offset-[#0a0a12] scale-105'
-                                                        : 'opacity-50 hover:opacity-80'
+                                                    ? 'ring-2 ring-orange-400 ring-offset-1 ring-offset-[#0a0a12] scale-105'
+                                                    : 'opacity-50 hover:opacity-80'
                                                     }`}
                                             >
                                                 <img
@@ -663,8 +707,8 @@ export function MagazineWorkspace({
                                     <button
                                         onClick={() => { stopPreview(); setSelectedMusic(null); }}
                                         className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl mb-1.5 text-xs transition-all border ${selectedMusic === null
-                                                ? 'bg-white/10 border-white/20 text-white'
-                                                : 'bg-white/3 border-white/6 text-white/40 hover:bg-white/8'
+                                            ? 'bg-white/10 border-white/20 text-white'
+                                            : 'bg-white/3 border-white/6 text-white/40 hover:bg-white/8'
                                             }`}
                                     >
                                         <span className="text-base">🔇</span>
@@ -676,8 +720,8 @@ export function MagazineWorkspace({
                                             <div
                                                 key={track.id}
                                                 className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border transition-all cursor-pointer ${selectedMusic?.id === track.id
-                                                        ? 'border-emerald-500/40 bg-emerald-500/10'
-                                                        : 'border-white/6 bg-white/3 hover:bg-white/8 hover:border-white/12'
+                                                    ? 'border-emerald-500/40 bg-emerald-500/10'
+                                                    : 'border-white/6 bg-white/3 hover:bg-white/8 hover:border-white/12'
                                                     }`}
                                                 onClick={() => { stopPreview(); setSelectedMusic(track); }}
                                             >
@@ -855,6 +899,13 @@ export function MagazineWorkspace({
                                     img.src = URL.createObjectURL(file);
                                 });
 
+                                const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => resolve(reader.result as string);
+                                    reader.onerror = reject;
+                                    reader.readAsDataURL(file);
+                                });
+
                                 // Extract a single poster frame from video
                                 const videoPoster = (file: File): Promise<string> => new Promise((resolve, reject) => {
                                     const video = document.createElement("video");
@@ -884,13 +935,25 @@ export function MagazineWorkspace({
                                 const processedPhotos = await Promise.all(photos.map(async (p) => {
                                     if (!p.file) return { ...p, file: undefined };
                                     if (p.type === "video") {
-                                        // Store poster frame for sharing; videos can't be embedded via Base64
+                                        // Convert video to Base64 to preserve it in the shared link
+                                        const base64 = await fileToBase64(p.file);
+                                        // Also store a poster frame to show while loading
                                         const poster = await videoPoster(p.file);
-                                        return { ...p, url: poster, type: "photo" as const, file: undefined };
+                                        return { ...p, url: base64, poster, file: undefined };
                                     }
                                     const compressed = await compressImage(p.file);
                                     return { ...p, url: compressed, file: undefined };
                                 }));
+
+                                // Check payload size
+                                const payloadSize = JSON.stringify(processedPhotos).length;
+                                if (payloadSize > 40 * 1024 * 1024) { // 40MB limit
+                                    const proceed = confirm(`This magazine is very large (${(payloadSize / 1024 / 1024).toFixed(1)} MB). It might fail to publish. Continue?`);
+                                    if (!proceed) {
+                                        setIsPublishing(false);
+                                        return;
+                                    }
+                                }
 
                                 const res = await fetch("/api/magazines", {
                                     method: "POST",
@@ -953,6 +1016,7 @@ export function MagazineWorkspace({
                     onElementChange={handleElementChange}
                     onElementRemove={handleElementRemove}
                     photoFilters={photoFilters}
+                    musicTrack={selectedMusic}
                 />
 
                 {/* PDF Export Support — must be in viewport for html2canvas to render correctly */}
@@ -967,6 +1031,7 @@ export function MagazineWorkspace({
                         onElementRemove={() => { }}
                         isExportMode={true}
                         photoFilters={photoFilters}
+                        musicTrack={selectedMusic}
                     />
                 </div>
             </div >

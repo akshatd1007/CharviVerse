@@ -9,6 +9,8 @@ export interface Photo {
     url: string;
     file?: File;
     type: "photo" | "video";
+    poster?: string; // Base64 poster frame for videos
+
 }
 
 interface UploaderProps {
