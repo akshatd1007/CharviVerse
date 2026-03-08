@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-playfair);
+  --font-bodoni: var(--font-bodoni);
+}
+
+:root {
+  --background: #fdfcff;
+  --foreground: #1e293b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #fdfcff;
+    --foreground: #1e293b;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/60 backdrop-blur-xl border border-purple-100 shadow-2xl;
+  }
+}

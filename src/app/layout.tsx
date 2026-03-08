@@ -1,0 +1,40 @@
+import type { Metadata } from "next";
+import { Inter, Playfair_Display, Bodoni_Moda } from "next/font/google";
+import "./globals.css";
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+});
+
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
+  subsets: ["latin"],
+});
+
+const bodoni = Bodoni_Moda({
+  variable: "--font-bodoni",
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+});
+
+export const metadata: Metadata = {
+  title: "CharviVerse | Digital Magazine",
+  description: "Create stunning AI-powered digital photo magazines.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body
+        className={`${inter.variable} ${playfair.variable} ${bodoni.variable} antialiased font-sans transition-colors duration-500`}
+      >
+        {children}
+      </body>
+    </html>
+  );
+}
