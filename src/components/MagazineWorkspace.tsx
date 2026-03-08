@@ -869,15 +869,19 @@ export function MagazineWorkspace({
                     </motion.button>
 
                     <motion.button
+                        id="publish-btn"
                         onClick={async () => {
+                            setIsPublishing(true);
+                            // The logic is inside the onClick of the button wrapper elsewhere or moved here? 
+                            // Re-checking the structure... it's a bit messy, let's ensure the ID is there.
                             if (!magazineId) return alert("Please save the magazine first!");
                             setIsPublishing(true);
                             try {
-                                // Compress image to max 1600px, JPEG quality 0.85
+                                // Compress image to max 1200px, JPEG quality 0.7 for Netlify compatibility
                                 const compressImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
                                     const img = new Image();
                                     img.onload = () => {
-                                        const MAX = 1600;
+                                        const MAX = 1200;
                                         let w = img.width, h = img.height;
                                         if (w > MAX || h > MAX) {
                                             const ratio = Math.min(MAX / w, MAX / h);
@@ -893,7 +897,7 @@ export function MagazineWorkspace({
                                             ctx.imageSmoothingQuality = 'high';
                                             ctx.drawImage(img, 0, 0, w, h);
                                         }
-                                        resolve(canvas.toDataURL("image/jpeg", 0.9));
+                                        resolve(canvas.toDataURL("image/jpeg", 0.7));
                                     };
                                     img.onerror = reject;
                                     img.src = URL.createObjectURL(file);
@@ -932,28 +936,51 @@ export function MagazineWorkspace({
                                     video.src = URL.createObjectURL(file);
                                 });
 
-                                const processedPhotos = await Promise.all(photos.map(async (p) => {
-                                    if (!p.file) return { ...p, file: undefined };
-                                    if (p.type === "video") {
-                                        // Convert video to Base64 to preserve it in the shared link
-                                        const base64 = await fileToBase64(p.file);
-                                        // Also store a poster frame to show while loading
-                                        const poster = await videoPoster(p.file);
-                                        return { ...p, url: base64, poster, file: undefined };
-                                    }
-                                    const compressed = await compressImage(p.file);
-                                    return { ...p, url: compressed, file: undefined };
-                                }));
+                                // Modified handlePublish logic start
+                                const total = photos.length;
+                                const processedPhotos = [];
 
-                                // Check payload size
+                                for (let i = 0; i < total; i++) {
+                                    const p = photos[i];
+                                    if (!p.file) {
+                                        processedPhotos.push({ ...p, file: undefined });
+                                        continue;
+                                    }
+
+                                    if (p.type === "video") {
+                                        setIsPublishing(true);
+                                        // Update status for user
+                                        const btn = document.getElementById("publish-btn");
+                                        if (btn) btn.innerText = `Encoding Video ${i + 1}...`;
+
+                                        const base64 = await fileToBase64(p.file);
+                                        const poster = await videoPoster(p.file);
+                                        processedPhotos.push({ ...p, url: base64, poster, file: undefined });
+                                    } else {
+                                        const btn = document.getElementById("publish-btn");
+                                        if (btn) btn.innerText = `Optimizing Photo ${i + 1}...`;
+                                        const compressed = await compressImage(p.file);
+                                        processedPhotos.push({ ...p, url: compressed, file: undefined });
+                                    }
+                                }
+
+                                const btn = document.getElementById("publish-btn");
+                                if (btn) btn.innerText = "Finalizing Package...";
+
+                                // Check payload size (Netlify limit is usually 10MB)
                                 const payloadSize = JSON.stringify(processedPhotos).length;
-                                if (payloadSize > 40 * 1024 * 1024) { // 40MB limit
-                                    const proceed = confirm(`This magazine is very large (${(payloadSize / 1024 / 1024).toFixed(1)} MB). It might fail to publish. Continue?`);
+                                if (payloadSize > 10 * 1024 * 1024) { // 10MB limit
+                                    const proceed = confirm(`Warning: This magazine is large (${(payloadSize / 1024 / 1024).toFixed(1)} MB). Netlify has a 10MB limit. If it fails, please remove a few videos. Continue?`);
                                     if (!proceed) {
                                         setIsPublishing(false);
+                                        if (btn) btn.innerText = "Publish & Share Link";
                                         return;
                                     }
                                 }
+
+                                if (btn) btn.innerText = "Uploading to Netlify...";
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout
 
                                 const res = await fetch("/api/magazines", {
                                     method: "POST",
@@ -971,8 +998,10 @@ export function MagazineWorkspace({
                                             photoFilters: photoFilters,
                                             musicTrack: selectedMusic,
                                         }
-                                    })
+                                    }),
+                                    signal: controller.signal
                                 });
+                                clearTimeout(timeoutId);
 
                                 const json = await res.json();
                                 if (!json.success) {
@@ -993,15 +1022,20 @@ export function MagazineWorkspace({
                                 if (copySuccess) {
                                     alert(`✨ Your Magazine is Live! ✨\n\nLink copied to clipboard:\n${url}\n\nShare it with anyone!`);
                                 } else {
-                                    // Fallback for browsers that block clipboard or mobile
                                     const msg = `✨ Your Magazine is Live! ✨\n\nLink:\n${url}\n\n(Please copy this link manually to share)`;
                                     alert(msg);
                                 }
                             } catch (e: any) {
                                 console.error(e);
-                                alert(`Failed to publish: ${e.message || "Unknown error"}. If your magazine is very large (60MB+), try removing a few high-res videos.`);
+                                if (e.name === 'AbortError') {
+                                    alert("Publishing timed out (90s). Your magazine might be too large for Netlify's free tier. Please try removing a video.");
+                                } else {
+                                    alert(`Failed to publish: ${e.message || "Unknown error"}. If your magazine is very large (10MB+), try removing a video.`);
+                                }
                             } finally {
                                 setIsPublishing(false);
+                                const btn = document.getElementById("publish-btn");
+                                if (btn) btn.innerText = "Publish & Share Link";
                             }
                         }}
                         disabled={isPublishing}
