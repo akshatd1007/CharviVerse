@@ -33,6 +33,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [magazines, setMagazines] = useState<SavedMagazine[]>([]);
+  const [loadingMagazines, setLoadingMagazines] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
 
@@ -48,13 +49,19 @@ export default function Home() {
   const springY = useSpring(mouseY, { stiffness: 60, damping: 20 });
 
   useEffect(() => {
-    const user = getCurrentUser();
-    if (!user) {
-      setShowAuth(true);
-    } else {
-      setCurrentUser(user);
-      setMagazines(getMagazines(user));
-    }
+    const initAuth = async () => {
+      const user = getCurrentUser();
+      if (!user) {
+        setShowAuth(true);
+      } else {
+        setCurrentUser(user);
+        setLoadingMagazines(true);
+        const data = await getMagazines(user);
+        setMagazines(data);
+        setLoadingMagazines(false);
+      }
+    };
+    initAuth();
 
     const handleMove = (e: MouseEvent) => {
       mouseX.set((e.clientX / window.innerWidth - 0.5) * 20);
@@ -64,10 +71,13 @@ export default function Home() {
     return () => window.removeEventListener("mousemove", handleMove);
   }, [mouseX, mouseY]);
 
-  const handleAuthSuccess = (username: string) => {
+  const handleAuthSuccess = async (username: string) => {
     setCurrentUser(username);
     setShowAuth(false);
-    setMagazines(getMagazines(username));
+    setLoadingMagazines(true);
+    const data = await getMagazines(username);
+    setMagazines(data);
+    setLoadingMagazines(false);
   };
 
   const handleLogout = () => {
@@ -380,7 +390,12 @@ export default function Home() {
               {/* Glow border */}
               <div className="absolute -inset-px rounded-[2rem] bg-gradient-to-br from-purple-400/20 to-teal-400/20 opacity-0 hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
 
-              {magazines.length === 0 ? (
+              {loadingMagazines ? (
+                <div className="flex flex-col items-center py-12">
+                  <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-600 rounded-full animate-spin mb-4" />
+                  <p className="text-slate-400 font-medium">Fetching your albums...</p>
+                </div>
+              ) : magazines.length === 0 ? (
                 <div className="flex flex-col items-center">
                   <div className="relative group flex flex-col items-center">
                     <div className="relative flex items-center justify-center mb-6 cursor-pointer">
@@ -417,7 +432,14 @@ export default function Home() {
                           )}
                           {/* Delete button */}
                           <button
-                            onClick={(e) => { e.stopPropagation(); if (currentUser && confirm("Delete this magazine?")) { deleteMagazine(currentUser, mag.id); setMagazines(getMagazines(currentUser)); } }}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (currentUser && confirm("Delete this magazine?")) {
+                                await deleteMagazine(currentUser, mag.id);
+                                const data = await getMagazines(currentUser);
+                                setMagazines(data);
+                              }
+                            }}
                             className="absolute top-3 right-3 p-2 rounded-full bg-white/80 text-slate-400 hover:text-red-500 hover:bg-white shadow-sm backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all"
                           ><Trash2 size={14} /></button>
                         </div>

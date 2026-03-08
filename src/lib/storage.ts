@@ -1,4 +1,4 @@
-// ── CharviVerse localStorage persistence ──────────────────────────────────────
+// ── CharviVerse Cloud Persistence ──────────────────────────────────────
 import type { PhotoFilter, MusicTrack } from './types';
 
 export interface SavedMagazine {
@@ -19,81 +19,103 @@ export interface SavedMagazine {
 
 export interface User {
     username: string;
-    passwordHash: string; // simple btoa — NOT cryptographically secure
+    passwordHash: string;
 }
 
-const USERS_KEY = 'charvi_users';
 const SESSION_KEY = 'charvi_current_user';
-const magazinesKey = (userId: string) => `charvi_magazines_${userId}`;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
-function hashPassword(pw: string): string {
-    return btoa(unescape(encodeURIComponent(pw)));
-}
-
-export function getStoredUsers(): User[] {
-    try { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }
-    catch { return []; }
-}
-
-export function registerUser(username: string, password: string): { ok: boolean; error?: string } {
-    const users = getStoredUsers();
-    if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
-        return { ok: false, error: 'Username already taken.' };
+export async function registerUser(username: string, password: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+        const res = await fetch("/api/auth", {
+            method: "POST",
+            body: JSON.stringify({ action: "signup", username, password })
+        });
+        const json = await res.json();
+        if (json.success) {
+            setCurrentUser(username);
+            return { ok: true };
+        }
+        return { ok: false, error: json.error || "Signup failed" };
+    } catch (e: any) {
+        return { ok: false, error: e.message };
     }
-    users.push({ username, passwordHash: hashPassword(password) });
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    setCurrentUser(username);
-    return { ok: true };
 }
 
-export function loginUser(username: string, password: string): { ok: boolean; error?: string } {
-    const users = getStoredUsers();
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (!user) return { ok: false, error: 'User not found.' };
-    if (user.passwordHash !== hashPassword(password)) return { ok: false, error: 'Incorrect password.' };
-    setCurrentUser(user.username);
-    return { ok: true };
+export async function loginUser(username: string, password: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+        const res = await fetch("/api/auth", {
+            method: "POST",
+            body: JSON.stringify({ action: "login", username, password })
+        });
+        const json = await res.json();
+        if (json.success) {
+            setCurrentUser(json.username);
+            return { ok: true };
+        }
+        return { ok: false, error: json.error || "Login failed" };
+    } catch (e: any) {
+        return { ok: false, error: e.message };
+    }
 }
 
 export function setCurrentUser(username: string) {
-    localStorage.setItem(SESSION_KEY, username);
+    if (typeof window !== "undefined") {
+        localStorage.setItem(SESSION_KEY, username);
+    }
 }
 
 export function getCurrentUser(): string | null {
-    return localStorage.getItem(SESSION_KEY);
+    if (typeof window !== "undefined") {
+        return localStorage.getItem(SESSION_KEY);
+    }
+    return null;
 }
 
 export function logoutUser() {
-    localStorage.removeItem(SESSION_KEY);
+    if (typeof window !== "undefined") {
+        localStorage.removeItem(SESSION_KEY);
+    }
 }
 
-// ── Magazines ────────────────────────────────────────────────────────────────
+// ── Magazines (Cloud Drafts) ──────────────────────────────────────────────────
 
-export function getMagazines(userId: string): SavedMagazine[] {
-    try { return JSON.parse(localStorage.getItem(magazinesKey(userId)) || '[]'); }
-    catch { return []; }
+export async function getMagazines(userId: string): Promise<SavedMagazine[]> {
+    try {
+        const res = await fetch(`/api/magazines/drafts?username=${encodeURIComponent(userId)}`);
+        const json = await res.json();
+        return json.drafts || [];
+    } catch {
+        return [];
+    }
 }
 
-export function saveMagazine(userId: string, magazine: SavedMagazine): void {
-    const all = getMagazines(userId);
-    const idx = all.findIndex(m => m.id === magazine.id);
-    if (idx >= 0) { all[idx] = { ...magazine, updatedAt: new Date().toISOString() }; }
-    else { all.unshift(magazine); }
-    localStorage.setItem(magazinesKey(userId), JSON.stringify(all));
+export async function saveMagazine(userId: string, magazine: SavedMagazine): Promise<void> {
+    try {
+        await fetch("/api/magazines/drafts", {
+            method: "POST",
+            body: JSON.stringify({ username: userId, magazine })
+        });
+    } catch (e) {
+        console.error("Save failed:", e);
+    }
 }
 
-export function deleteMagazine(userId: string, id: string): void {
-    const all = getMagazines(userId).filter(m => m.id !== id);
-    localStorage.setItem(magazinesKey(userId), JSON.stringify(all));
+export async function deleteMagazine(userId: string, id: string): Promise<void> {
+    try {
+        await fetch(`/api/magazines/drafts?username=${encodeURIComponent(userId)}&id=${encodeURIComponent(id)}`, {
+            method: "DELETE"
+        });
+    } catch (e) {
+        console.error("Delete failed:", e);
+    }
 }
 
-export function renameMagazine(userId: string, id: string, newTitle: string): void {
-    const all = getMagazines(userId);
-    const idx = all.findIndex(m => m.id === id);
-    if (idx >= 0) {
-        all[idx] = { ...all[idx], title: newTitle, updatedAt: new Date().toISOString() };
-        localStorage.setItem(magazinesKey(userId), JSON.stringify(all));
+export async function renameMagazine(userId: string, id: string, newTitle: string): Promise<void> {
+    const all = await getMagazines(userId);
+    const m = all.find(mag => mag.id === id);
+    if (m) {
+        await saveMagazine(userId, { ...m, title: newTitle });
     }
 }

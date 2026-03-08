@@ -291,23 +291,28 @@ export function MagazineWorkspace({
                 });
             }
 
-            saveMagazine(user, {
-                id: magazineId,
-                title: albumTitle || `Magazine ${new Date().toLocaleDateString()}`,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                templateId: activeTemplate,
-                photoUrls: base64Urls,
-                photoTypes: photos.map(p => p.type),
-                coverIndex: coverIndex,
-                elements,
-                texts,
-                thumbnail,
-                photoFilters,
-                musicTrack: selectedMusic,
-            });
-            setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 2000);
+            try {
+                await saveMagazine(user, {
+                    id: magazineId,
+                    title: albumTitle || `Magazine ${new Date().toLocaleDateString()}`,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    templateId: activeTemplate,
+                    photoUrls: base64Urls,
+                    photoTypes: photos.map(p => p.type),
+                    coverIndex: coverIndex,
+                    elements,
+                    texts,
+                    thumbnail,
+                    photoFilters,
+                    musicTrack: selectedMusic,
+                });
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 2000);
+            } catch (e) {
+                console.error("Save failed:", e);
+                alert("Cloud save failed. Please check your connection.");
+            }
         } finally {
             setIsSaving(false);
         }

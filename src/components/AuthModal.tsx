@@ -29,15 +29,20 @@ export function AuthModal({ onSuccess }: AuthModalProps) {
             return;
         }
         setLoading(true);
-        await new Promise(r => setTimeout(r, 600)); // brief UX delay
-        const result = tab === "login"
-            ? loginUser(username.trim(), password)
-            : registerUser(username.trim(), password);
-        setLoading(false);
-        if (result.ok) {
-            onSuccess(username.trim());
-        } else {
-            setError(result.error || "Something went wrong.");
+        try {
+            const result = tab === "login"
+                ? await loginUser(username.trim(), password)
+                : await registerUser(username.trim(), password);
+
+            if (result.ok) {
+                onSuccess(username.trim());
+            } else {
+                setError(result.error || "Something went wrong.");
+            }
+        } catch (e: any) {
+            setError(e.message || "An unexpected error occurred.");
+        } finally {
+            setLoading(false);
         }
     };
 
