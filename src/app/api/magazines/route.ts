@@ -8,7 +8,7 @@ import path from "path";
 // Development (local): Uses the local filesystem under data/magazines/
 
 const DATA_DIR = path.join(process.cwd(), "data", "magazines");
-const IS_NETLIFY = !!process.env.NETLIFY;
+const IS_NETLIFY = !!process.env.NETLIFY || process.env.NODE_ENV === 'production';
 
 async function saveToLocal(id: string, data: object) {
     await fs.mkdir(DATA_DIR, { recursive: true });
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
         const id = payload.id || crypto.randomUUID();
 
         const body = JSON.stringify(magazineData);
-        console.log(`Publishing magazine ${id}: ${(body.length / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`Publishing magazine ${id} to ${IS_NETLIFY ? 'Netlify Blobs' : 'Local Storage'}: ${(body.length / 1024 / 1024).toFixed(2)} MB`);
 
         if (IS_NETLIFY) {
             await saveToNetlify(id, magazineData);

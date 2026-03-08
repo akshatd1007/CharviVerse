@@ -975,18 +975,31 @@ export function MagazineWorkspace({
                                 });
 
                                 const json = await res.json();
-                                if (!json.success) throw new Error("API failed");
+                                if (!json.success) {
+                                    throw new Error(json.error || "Server failed to save magazine");
+                                }
 
                                 const url = `${window.location.origin}${json.url}`;
+                                let copySuccess = false;
                                 try {
-                                    await navigator.clipboard.writeText(url);
-                                    alert(`Web Link Published & Copied!\n\n${url}\n\nShare this link anywhere!`);
-                                } catch {
-                                    alert(`Your magazine is ready! Web link:\n${url}`);
+                                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                                        await navigator.clipboard.writeText(url);
+                                        copySuccess = true;
+                                    }
+                                } catch (e) {
+                                    console.warn("Clipboard copy failed:", e);
                                 }
-                            } catch (e) {
+
+                                if (copySuccess) {
+                                    alert(`✨ Your Magazine is Live! ✨\n\nLink copied to clipboard:\n${url}\n\nShare it with anyone!`);
+                                } else {
+                                    // Fallback for browsers that block clipboard or mobile
+                                    const msg = `✨ Your Magazine is Live! ✨\n\nLink:\n${url}\n\n(Please copy this link manually to share)`;
+                                    alert(msg);
+                                }
+                            } catch (e: any) {
                                 console.error(e);
-                                alert("Failed to publish: Payload might be too large.");
+                                alert(`Failed to publish: ${e.message || "Unknown error"}. If your magazine is very large (60MB+), try removing a few high-res videos.`);
                             } finally {
                                 setIsPublishing(false);
                             }
