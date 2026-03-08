@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 
 const DATA_DIR = path.join(process.cwd(), "data", "magazines");
-const IS_NETLIFY = !!process.env.NETLIFY;
+const IS_NETLIFY = !!process.env.NETLIFY || process.env.NODE_ENV === 'production';
 
 async function loadFromLocal(id: string) {
     const filePath = path.join(DATA_DIR, `${id}.json`);
@@ -12,11 +12,16 @@ async function loadFromLocal(id: string) {
 }
 
 async function loadFromNetlify(id: string) {
-    const { getStore } = await import("@netlify/blobs");
-    const store = getStore("magazines");
-    const data = await store.get(id, { type: "text" });
-    if (!data) return null;
-    return JSON.parse(data);
+    try {
+        const { getStore } = await import("@netlify/blobs");
+        const store = getStore("magazines");
+        const data = await store.get(id, { type: "text" });
+        if (!data) return null;
+        return JSON.parse(data);
+    } catch (err) {
+        console.error("Netlify Load Error:", err);
+        return null;
+    }
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {

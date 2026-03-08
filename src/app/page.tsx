@@ -48,6 +48,12 @@ export default function Home() {
   const springX = useSpring(mouseX, { stiffness: 60, damping: 20 });
   const springY = useSpring(mouseY, { stiffness: 60, damping: 20 });
 
+  // Robust UUID fallback
+  const getUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  };
+
   useEffect(() => {
     const initAuth = async () => {
       const user = getCurrentUser();
@@ -62,7 +68,9 @@ export default function Home() {
       }
     };
     initAuth();
+  }, []); // Only run on mount, NOT on mouse move
 
+  useEffect(() => {
     const handleMove = (e: MouseEvent) => {
       mouseX.set((e.clientX / window.innerWidth - 0.5) * 20);
       mouseY.set((e.clientY / window.innerHeight - 0.5) * 20);
@@ -92,7 +100,7 @@ export default function Home() {
     setInitialElements([]);
     setInitialTemplate("minimal");
     setInitialTexts({});
-    setCurrentMagazineId(crypto.randomUUID());
+    setCurrentMagazineId(getUUID());
     setView("workspace");
   };
   const handleAddMedia = (newPhotos: Photo[]) => { setPhotos(prev => [...prev, ...newPhotos]); };
@@ -139,7 +147,7 @@ export default function Home() {
     try {
       const photos = mag.photoUrls
         .filter(u => u && !u.startsWith('blob:'))
-        .map((url, i) => ({ id: crypto.randomUUID(), url, type: mag.photoTypes?.[i] ?? 'photo' }));
+        .map((url, i) => ({ id: getUUID(), url, type: mag.photoTypes?.[i] ?? 'photo' }));
 
       if (photos.length === 0) {
         alert('No persistent photos found. Please re-save the album first.');

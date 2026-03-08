@@ -79,6 +79,12 @@ const STICKER_CATEGORIES = [
     },
 ];
 
+// Safe UUID helper
+const getUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+};
+
 export function MagazineWorkspace({
     photos,
     onReset,
@@ -350,7 +356,7 @@ export function MagazineWorkspace({
 
     const addText = () => {
         const newEl: PageElement = {
-            id: crypto.randomUUID(),
+            id: getUUID(),
             pageIndex: currentPageIndex,
             type: "text",
             content: "Your Text Here",
@@ -365,7 +371,7 @@ export function MagazineWorkspace({
 
     const addSticker = (emoji: string) => {
         const newEl: PageElement = {
-            id: crypto.randomUUID(),
+            id: getUUID(),
             pageIndex: currentPageIndex,
             type: "sticker",
             content: emoji,
@@ -389,7 +395,7 @@ export function MagazineWorkspace({
         // Match the timeout from Uploader for consistent UX, or process immediately
         setTimeout(() => {
             const newPhotos: Photo[] = files.map((file) => ({
-                id: crypto.randomUUID(),
+                id: getUUID(),
                 url: URL.createObjectURL(file), // create local preview URL
                 file,
                 type: file.type.startsWith("video/") ? "video" : "photo",

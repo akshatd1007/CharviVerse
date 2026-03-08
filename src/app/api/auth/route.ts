@@ -6,18 +6,19 @@ const IS_NETLIFY = !!process.env.NETLIFY || process.env.NODE_ENV === 'production
 const DATA_DIR = path.join(process.cwd(), "data", "users");
 
 async function getUsers() {
-    if (IS_NETLIFY) {
-        const { getStore } = await import("@netlify/blobs");
-        const store = getStore("users");
-        const data = await store.get("all_users", { type: "text" });
-        return data ? JSON.parse(data) : [];
-    } else {
-        try {
+    try {
+        if (IS_NETLIFY) {
+            const { getStore } = await import("@netlify/blobs");
+            const store = getStore("users");
+            const data = await store.get("all_users", { type: "text" });
+            return data ? JSON.parse(data) : [];
+        } else {
             const data = await fs.readFile(path.join(DATA_DIR, "users.json"), "utf-8");
             return JSON.parse(data);
-        } catch {
-            return [];
         }
+    } catch (e) {
+        console.error("GetUsers error:", e);
+        return [];
     }
 }
 

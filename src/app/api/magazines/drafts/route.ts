@@ -6,19 +6,20 @@ const IS_NETLIFY = !!process.env.NETLIFY || process.env.NODE_ENV === 'production
 const DATA_DIR = path.join(process.cwd(), "data", "drafts");
 
 async function getUserDrafts(username: string) {
-    if (IS_NETLIFY) {
-        const { getStore } = await import("@netlify/blobs");
-        const store = getStore("drafts");
-        const key = `user_${username.toLowerCase()}`;
-        const data = await store.get(key, { type: "text" });
-        return data ? JSON.parse(data) : [];
-    } else {
-        try {
+    try {
+        if (IS_NETLIFY) {
+            const { getStore } = await import("@netlify/blobs");
+            const store = getStore("drafts");
+            const key = `user_${username.toLowerCase()}`;
+            const data = await store.get(key, { type: "text" });
+            return data ? JSON.parse(data) : [];
+        } else {
             const data = await fs.readFile(path.join(DATA_DIR, `${username.toLowerCase()}.json`), "utf-8");
             return JSON.parse(data);
-        } catch {
-            return [];
         }
+    } catch (e) {
+        console.error("GetUserDrafts error:", e);
+        return [];
     }
 }
 

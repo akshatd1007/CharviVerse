@@ -24,12 +24,18 @@ export function Uploader({ onUpload }: UploaderProps) {
         (acceptedFiles: File[]) => {
             setIsProcessing(true);
             setTimeout(() => {
-                const newPhotos: Photo[] = acceptedFiles.map((file) => ({
-                    id: crypto.randomUUID(),
-                    url: URL.createObjectURL(file),
-                    file,
-                    type: file.type.startsWith("video/") ? "video" : "photo",
-                }));
+                const newPhotos: Photo[] = acceptedFiles.map((file) => {
+                    const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+                    return {
+                        id: uuid,
+                        url: URL.createObjectURL(file),
+                        file,
+                        type: file.type.startsWith("video/") ? "video" : "photo",
+                    };
+                });
                 setIsProcessing(false);
                 onUpload(newPhotos);
             }, 1200);
